@@ -83,17 +83,22 @@ class SessionEntryDetail {
     required this.entry,
     this.registeredItem,
     required this.locationPath,
+    required this.isCompleted,
   });
 
   final SessionItem entry;
   final Item? registeredItem;
   final String? locationPath;
+  final bool isCompleted;
 
   bool get isRegisteredItem => entry.itemType == registeredSessionItemType;
 
   bool get isChecked => entry.checked == 1;
 
   String get displayName {
+    if (isCompleted) {
+      return entry.nameSnapshot;
+    }
     if (registeredItem != null) {
       return registeredItem!.name;
     }
@@ -344,6 +349,12 @@ class SessionRepository {
           );
         }
 
+        final shouldResetChecked =
+            current.itemType != normalized.itemType ||
+            current.itemId != normalized.itemId ||
+            (normalized.itemType == textSessionItemType &&
+                current.textName != normalized.textName) ||
+            current.requiredQuantity != normalized.requiredQuantity;
         final updated =
             await (db.update(
               db.sessionItems,
@@ -355,6 +366,12 @@ class SessionRepository {
                 nameSnapshot: Value(normalized.nameSnapshot),
                 locationSnapshot: Value(normalized.locationSnapshot),
                 requiredQuantity: Value(normalized.requiredQuantity),
+                checked: shouldResetChecked
+                    ? const Value(0)
+                    : const Value.absent(),
+                checkedAt: shouldResetChecked
+                    ? const Value(null)
+                    : const Value.absent(),
                 sortOrder: Value(normalized.sortOrder),
               ),
             );
@@ -374,12 +391,21 @@ class SessionRepository {
     return _runWithDataGuard('修改出门任务条目数量失败', () {
       return db.transaction(() async {
         await _requireActive(sessionId);
-        await _requireEntry(sessionId, entryId);
+        final current = await _requireEntry(sessionId, entryId);
+        final shouldResetChecked = current.requiredQuantity != requiredQuantity;
         final updated =
             await (db.update(
               db.sessionItems,
             )..where((table) => table.id.equals(entryId))).write(
-              SessionItemsCompanion(requiredQuantity: Value(requiredQuantity)),
+              SessionItemsCompanion(
+                requiredQuantity: Value(requiredQuantity),
+                checked: shouldResetChecked
+                    ? const Value(0)
+                    : const Value.absent(),
+                checkedAt: shouldResetChecked
+                    ? const Value(null)
+                    : const Value.absent(),
+              ),
             );
         _ensureUpdated(updated, expected: 1, message: '修改出门任务条目数量失败');
         await _touchSession(sessionId);
@@ -404,6 +430,7 @@ class SessionRepository {
           );
         }
         final normalizedName = _normalizeItemName(name);
+        final shouldResetChecked = current.textName != normalizedName;
         final updated =
             await (db.update(
               db.sessionItems,
@@ -411,6 +438,12 @@ class SessionRepository {
               SessionItemsCompanion(
                 textName: Value(normalizedName),
                 nameSnapshot: Value(normalizedName),
+                checked: shouldResetChecked
+                    ? const Value(0)
+                    : const Value.absent(),
+                checkedAt: shouldResetChecked
+                    ? const Value(null)
+                    : const Value.absent(),
               ),
             );
         _ensureUpdated(updated, expected: 1, message: '修改普通文本条目失败');
@@ -743,6 +776,7 @@ class SessionRepository {
                 entry: entry,
                 registeredItem: live.item,
                 locationPath: live.locationPath,
+                isCompleted: false,
               ),
             );
           } else {
@@ -750,6 +784,7 @@ class SessionRepository {
               SessionEntryDetail(
                 entry: entry,
                 locationPath: entry.locationSnapshot,
+                isCompleted: true,
               ),
             );
           }
@@ -766,6 +801,7 @@ class SessionRepository {
             SessionEntryDetail(
               entry: entry,
               locationPath: entry.locationSnapshot,
+              isCompleted: session.status == 'COMPLETED',
             ),
           );
         default:

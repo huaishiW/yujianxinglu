@@ -731,15 +731,63 @@ void main() {
       await repository.updateTemplate(id: olderId, name: 'older renamed');
 
       final recent = await repository.listRecentlyUsed();
-      expect(recent.map((template) => template.id), [
-        newerId,
-        olderId,
-        unusedId,
-      ]);
+      expect(recent.map((template) => template.id), [newerId, olderId]);
       expect((await repository.getById(olderId)).lastUsedAt, 1000);
+      expect((await repository.getById(unusedId)).lastUsedAt, isNull);
 
       final limited = await repository.listRecentlyUsed(limit: 2);
       expect(limited.map((template) => template.id), [newerId, olderId]);
+    },
+  );
+
+  test('orders used templates with the same last used time stably', () async {
+    final locationId = await insertLocation('卧室');
+    final itemId = await createItem(name: '钥匙', locationId: locationId);
+    final firstId = await repository.create(
+      name: 'first',
+      entries: [TemplateEntryInput.registered(itemId: itemId)],
+    );
+    final secondId = await repository.create(
+      name: 'second',
+      entries: [TemplateEntryInput.registered(itemId: itemId)],
+    );
+
+    await (database.update(
+      database.outgoingTemplates,
+    )..where((table) => table.id.equals(firstId))).write(
+      const OutgoingTemplatesCompanion(
+        createdAt: Value(100),
+        lastUsedAt: Value(3000),
+      ),
+    );
+    await (database.update(
+      database.outgoingTemplates,
+    )..where((table) => table.id.equals(secondId))).write(
+      const OutgoingTemplatesCompanion(
+        createdAt: Value(100),
+        lastUsedAt: Value(3000),
+      ),
+    );
+
+    final recent = await repository.listRecentlyUsed();
+    expect(recent.map((template) => template.id), [secondId, firstId]);
+  });
+
+  test(
+    'returns no templates when all templates have never been used',
+    () async {
+      final locationId = await insertLocation('卧室');
+      final itemId = await createItem(name: '钥匙', locationId: locationId);
+      await repository.create(
+        name: 'unused one',
+        entries: [TemplateEntryInput.registered(itemId: itemId)],
+      );
+      await repository.create(
+        name: 'unused two',
+        entries: [TemplateEntryInput.registered(itemId: itemId)],
+      );
+
+      expect(await repository.listRecentlyUsed(), isEmpty);
     },
   );
 

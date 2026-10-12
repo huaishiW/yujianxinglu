@@ -209,6 +209,7 @@ class TemplateRepository {
 
   Future<List<OutgoingTemplate>> listRecentlyUsed({int? limit}) {
     final query = db.select(db.outgoingTemplates)
+      ..where((table) => table.lastUsedAt.isNotNull())
       ..orderBy([
         (table) =>
             OrderingTerm(expression: table.lastUsedAt, mode: OrderingMode.desc),

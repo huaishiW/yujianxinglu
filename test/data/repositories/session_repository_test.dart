@@ -522,6 +522,191 @@ void main() {
   });
 
   test(
+    'resets checked state only when an entry meaningfully changes',
+    () async {
+      final locationId = await insertLocation('Bedroom');
+      final firstItemId = await createItem(
+        name: 'First item',
+        locationId: locationId,
+      );
+      final secondItemId = await createItem(
+        name: 'Second item',
+        locationId: locationId,
+      );
+      final sessionId = await repository.createDirect(
+        title: 'Edit check state',
+        entries: [
+          SessionEntryInput.registered(
+            itemId: firstItemId,
+            requiredQuantity: 2,
+          ),
+          const SessionEntryInput.text(textName: 'Original note'),
+        ],
+      );
+      final initialEntries = await readRawEntries(sessionId);
+      final registeredEntryId = initialEntries
+          .singleWhere((entry) => entry.itemId == firstItemId)
+          .id;
+      final textEntryId = initialEntries
+          .singleWhere((entry) => entry.itemType == textSessionItemType)
+          .id;
+
+      await repository.setChecked(sessionId, registeredEntryId, true);
+      await repository.updateEntry(
+        sessionId: sessionId,
+        entryId: registeredEntryId,
+        entry: SessionEntryInput.registered(
+          itemId: secondItemId,
+          requiredQuantity: 2,
+        ),
+      );
+      var registeredEntry = (await readRawEntries(sessionId))
+          .singleWhere((entry) => entry.id == registeredEntryId);
+      expect(registeredEntry.itemId, secondItemId);
+      expect(registeredEntry.checked, 0);
+      expect(registeredEntry.checkedAt, isNull);
+
+      await repository.setChecked(sessionId, registeredEntryId, true);
+      await repository.updateEntry(
+        sessionId: sessionId,
+        entryId: registeredEntryId,
+        entry: const SessionEntryInput.text(
+          textName: 'Converted note',
+          requiredQuantity: 2,
+        ),
+      );
+      var convertedEntry = (await readRawEntries(sessionId))
+          .singleWhere((entry) => entry.id == registeredEntryId);
+      expect(convertedEntry.itemType, textSessionItemType);
+      expect(convertedEntry.checked, 0);
+      expect(convertedEntry.checkedAt, isNull);
+
+      await repository.setChecked(sessionId, registeredEntryId, true);
+      await repository.renameTextEntry(
+        sessionId: sessionId,
+        entryId: registeredEntryId,
+        name: 'Renamed note',
+      );
+      convertedEntry = (await readRawEntries(sessionId))
+          .singleWhere((entry) => entry.id == registeredEntryId);
+      expect(convertedEntry.textName, 'Renamed note');
+      expect(convertedEntry.checked, 0);
+      expect(convertedEntry.checkedAt, isNull);
+
+      await repository.setChecked(sessionId, registeredEntryId, true);
+      await repository.updateEntryQuantity(
+        sessionId: sessionId,
+        entryId: registeredEntryId,
+        requiredQuantity: 3,
+      );
+      convertedEntry = (await readRawEntries(sessionId))
+          .singleWhere((entry) => entry.id == registeredEntryId);
+      expect(convertedEntry.requiredQuantity, 3);
+      expect(convertedEntry.checked, 0);
+      expect(convertedEntry.checkedAt, isNull);
+
+      await repository.setChecked(sessionId, registeredEntryId, true);
+      final checkedBeforeSameQuantity = (await readRawEntries(sessionId))
+          .singleWhere((entry) => entry.id == registeredEntryId);
+      await repository.updateEntryQuantity(
+        sessionId: sessionId,
+        entryId: registeredEntryId,
+        requiredQuantity: 3,
+      );
+      var unchangedEntry = (await readRawEntries(sessionId))
+          .singleWhere((entry) => entry.id == registeredEntryId);
+      expect(unchangedEntry.checked, 1);
+      expect(unchangedEntry.checkedAt, checkedBeforeSameQuantity.checkedAt);
+
+      await repository.updateEntry(
+        sessionId: sessionId,
+        entryId: registeredEntryId,
+        entry: SessionEntryInput.text(
+          textName: 'Renamed note',
+          requiredQuantity: 3,
+          sortOrder: unchangedEntry.sortOrder,
+        ),
+      );
+      unchangedEntry = (await readRawEntries(sessionId))
+          .singleWhere((entry) => entry.id == registeredEntryId);
+      expect(unchangedEntry.checked, 1);
+      expect(unchangedEntry.checkedAt, checkedBeforeSameQuantity.checkedAt);
+
+      await repository.renameTextEntry(
+        sessionId: sessionId,
+        entryId: registeredEntryId,
+        name: '  Renamed note  ',
+      );
+      unchangedEntry = (await readRawEntries(sessionId))
+          .singleWhere((entry) => entry.id == registeredEntryId);
+      expect(unchangedEntry.checked, 1);
+      expect(unchangedEntry.checkedAt, checkedBeforeSameQuantity.checkedAt);
+
+      expect(
+        (await readRawEntries(sessionId))
+            .singleWhere((entry) => entry.id == textEntryId)
+            .checked,
+        0,
+      );
+    },
+  );
+
+  test(
+    'preserves checked state across reorder and live item changes',
+    () async {
+      final bedroomId = await insertLocation('Bedroom');
+      final deskId = await insertLocation('Desk', parentId: bedroomId);
+      final livingRoomId = await insertLocation('Living room');
+      final itemId = await createItem(
+        name: 'Old charger',
+        quantity: 1,
+        locationId: deskId,
+      );
+      final sessionId = await repository.createDirect(
+        title: 'Keep checked state',
+        entries: [
+          SessionEntryInput.registered(itemId: itemId),
+          const SessionEntryInput.text(textName: 'Tissues'),
+        ],
+      );
+      final entries = await readRawEntries(sessionId);
+      final registeredEntryId = entries
+          .singleWhere((entry) => entry.itemId == itemId)
+          .id;
+      final textEntryId = entries
+          .singleWhere((entry) => entry.itemType == textSessionItemType)
+          .id;
+
+      await repository.setChecked(sessionId, registeredEntryId, true);
+      final checkedBefore = (await readRawEntries(sessionId))
+          .singleWhere((entry) => entry.id == registeredEntryId);
+
+      await itemRepository.update(id: itemId, name: 'New charger', quantity: 4);
+      await locationRepository.move(id: deskId, targetParentId: livingRoomId);
+
+      var activeEntry = (await readRawEntries(sessionId))
+          .singleWhere((entry) => entry.id == registeredEntryId);
+      expect(activeEntry.checked, 1);
+      expect(activeEntry.checkedAt, checkedBefore.checkedAt);
+      final detail = await repository.listEntries(sessionId);
+      final registeredDetail = detail.singleWhere(
+        (entry) => entry.entry.id == registeredEntryId,
+      );
+      expect(registeredDetail.displayName, 'New charger');
+      expect(registeredDetail.locationPath, 'Living room / Desk');
+
+      await repository.reorderEntries(
+        sessionId: sessionId,
+        orderedEntryIds: [textEntryId, registeredEntryId],
+      );
+      activeEntry = (await readRawEntries(sessionId))
+          .singleWhere((entry) => entry.id == registeredEntryId);
+      expect(activeEntry.checked, 1);
+      expect(activeEntry.checkedAt, checkedBefore.checkedAt);
+    },
+  );
+
+  test(
     'edits, reorders, and removes active entries without emptying the task',
     () async {
       final locationId = await insertLocation('Bedroom');
@@ -853,6 +1038,57 @@ void main() {
     },
   );
 
+  test(
+    'completed registered and text entries display frozen name snapshots',
+    () async {
+      final bedroomId = await insertLocation('Bedroom');
+      final deskId = await insertLocation('Desk', parentId: bedroomId);
+      final livingRoomId = await insertLocation('Living room');
+      final itemId = await createItem(
+        name: 'Original charger',
+        locationId: deskId,
+      );
+      final sessionId = await repository.createDirect(
+        title: 'Snapshot names',
+        entries: [
+          SessionEntryInput.registered(itemId: itemId),
+          const SessionEntryInput.text(textName: 'Original text'),
+        ],
+      );
+      final rawEntries = await readRawEntries(sessionId);
+      final registeredEntry = rawEntries.singleWhere(
+        (entry) => entry.itemType == registeredSessionItemType,
+      );
+      final textEntry = rawEntries.singleWhere(
+        (entry) => entry.itemType == textSessionItemType,
+      );
+
+      await repository.complete(sessionId, confirmedUnchecked: true);
+      await itemRepository.update(id: itemId, name: 'Current charger');
+      await locationRepository.move(id: deskId, targetParentId: livingRoomId);
+      await locationRepository.rename(deskId, 'Cabinet');
+      await (database.update(database.sessionItems)
+            ..where((table) => table.id.equals(textEntry.id)))
+          .write(const SessionItemsCompanion(textName: Value('Current text')));
+
+      final entries = await repository.listEntries(sessionId);
+      final registeredHistory = entries.singleWhere(
+        (entry) => entry.entry.id == registeredEntry.id,
+      );
+      final textHistory = entries.singleWhere(
+        (entry) => entry.entry.id == textEntry.id,
+      );
+
+      expect(registeredHistory.isCompleted, isTrue);
+      expect(registeredHistory.displayName, 'Original charger');
+      expect(registeredHistory.locationPath, 'Bedroom / Desk');
+      expect(registeredHistory.registeredItem, isNull);
+      expect(textHistory.isCompleted, isTrue);
+      expect(textHistory.displayName, 'Original text');
+      expect(textHistory.locationPath, isNull);
+    },
+  );
+
   test('completes a fully checked task without confirmation and preserves checked times', () async {
     final sessionId = await repository.createDirect(
       title: 'All checked',
@@ -927,6 +1163,14 @@ void main() {
         repository.addEntry(
           sessionId: sessionId,
           entry: const SessionEntryInput.text(textName: 'B'),
+        ),
+        sessionError(SessionRepositoryErrorCode.completedSessionReadOnly),
+      );
+      await expectLater(
+        repository.updateEntry(
+          sessionId: sessionId,
+          entryId: entryId,
+          entry: const SessionEntryInput.text(textName: 'Changed'),
         ),
         sessionError(SessionRepositoryErrorCode.completedSessionReadOnly),
       );
