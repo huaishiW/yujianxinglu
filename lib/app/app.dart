@@ -1,17 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../core/constants/app_constants.dart';
 import 'router/app_router.dart';
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const ProviderScope(child: PersonalItemsApp());
-  }
-}
 
 class PersonalItemsApp extends StatelessWidget {
   const PersonalItemsApp({super.key});
@@ -19,9 +8,12 @@ class PersonalItemsApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: AppConstants.appName,
+      title: '个人物品与出门助手',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2E7D6B)),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+        ),
         useMaterial3: true,
       ),
       routerConfig: appRouter,
