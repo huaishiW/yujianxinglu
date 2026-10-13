@@ -580,6 +580,16 @@ class SessionRepository {
           );
         }
 
+        final seenEntryIds = <int>{};
+        for (final entry in entries) {
+          if (entry.id != null && !seenEntryIds.add(entry.id!)) {
+            throw const SessionRepositoryException(
+              SessionRepositoryErrorCode.invalidItem,
+              '同一出门任务编辑请求中已有条目 ID 不能重复',
+            );
+          }
+        }
+
         final registeredItemIds = <int>{};
         for (final entry in entries) {
           if (entry.itemType == registeredSessionItemType &&
@@ -607,10 +617,15 @@ class SessionRepository {
             if (current == null) {
               throw const SessionRepositoryException(
                 SessionRepositoryErrorCode.sessionItemNotFound,
-                '出门任务条目不存在',
+                '出门任务条目不存在或不属于当前任务',
               );
             }
-            retainedIds.add(entryId);
+            if (!retainedIds.add(entryId)) {
+              throw const SessionRepositoryException(
+                SessionRepositoryErrorCode.invalidItem,
+                '同一出门任务编辑请求中已有条目 ID 不能重复',
+              );
+            }
 
             switch (input.itemType) {
               case registeredSessionItemType:

@@ -57,11 +57,7 @@ void main() {
   group('TASK 11 任务创建流程', () {
     testWidgets('直接创建出门任务：表单校验、混合条目保存，创建后跳转详情页且条目初始未勾选', (tester) async {
       final locId = await locationRepository.create(name: '玄关');
-      await itemRepository.create(
-        name: '门禁卡',
-        quantity: 1,
-        locationId: locId,
-      );
+      await itemRepository.create(name: '门禁卡', quantity: 1, locationId: locId);
 
       await pumpApp(tester);
       await openOutingsPage(tester);
@@ -431,6 +427,36 @@ void main() {
 
       // 物品库中钥匙依然完好无损
       expect(await itemRepository.findById(itemId), isNotNull);
+    });
+
+    testWidgets('快速连续点击勾选，在途保护生效，最终状态与数据库完全一致', (tester) async {
+      final locId = await locationRepository.create(name: '玄关');
+      final itemId = await itemRepository.create(name: '手环', locationId: locId);
+      final sessionId = await sessionRepository.createDirect(
+        title: '连续点击测试',
+        entries: [SessionEntryInput.registered(itemId: itemId)],
+      );
+
+      await pumpApp(tester);
+      await openOutingsPage(tester);
+      await tester.tap(find.text('连续点击测试'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('0 / 1 已携带'), findsOneWidget);
+
+      // 连续多次快速点击整行
+      await tester.tap(find.byType(Checkbox));
+      await tester.tap(find.byType(Checkbox));
+      await tester.tap(find.byType(Checkbox));
+      await tester.pumpAndSettle();
+
+      // 验证最终状态与数据库完全一致
+      final entries = await sessionRepository.listEntries(sessionId);
+      final isDbChecked = entries.first.isChecked;
+      expect(
+        find.text(isDbChecked ? '1 / 1 已携带' : '0 / 1 已携带'),
+        findsOneWidget,
+      );
     });
   });
 }

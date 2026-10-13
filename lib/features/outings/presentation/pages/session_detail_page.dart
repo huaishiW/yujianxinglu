@@ -8,15 +8,56 @@ import '../../application/session_providers.dart';
 import '../widgets/session_complete_dialog.dart';
 import '../widgets/session_delete_dialog.dart';
 
-class SessionDetailPage extends ConsumerWidget {
+class SessionDetailPage extends ConsumerStatefulWidget {
   const SessionDetailPage({required this.sessionId, super.key});
 
   final int sessionId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final detailAsync = ref.watch(sessionDetailProvider(sessionId));
-    final shortagesAsync = ref.watch(sessionShortagesProvider(sessionId));
+  ConsumerState<SessionDetailPage> createState() => _SessionDetailPageState();
+}
+
+class _SessionDetailPageState extends ConsumerState<SessionDetailPage> {
+  final Set<int> _togglingEntryIds = <int>{};
+
+  Future<void> _handleToggleCheck(SessionEntryDetail detail) async {
+    final entryId = detail.entry.id;
+    if (_togglingEntryIds.contains(entryId)) return;
+    _togglingEntryIds.add(entryId);
+
+    final newValue = !detail.isChecked;
+    try {
+      await ref
+          .read(sessionRepositoryProvider)
+          .setChecked(widget.sessionId, entryId, newValue);
+      ref.read(sessionRefreshProvider.notifier).refresh();
+      ref.invalidate(activeSessionsProvider);
+    } catch (e) {
+      if (mounted) {
+        ref.invalidate(sessionDetailProvider(widget.sessionId));
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(
+                e is SessionRepositoryException ? e.message : '更新勾选状态失败，请重试',
+              ),
+            ),
+          );
+      }
+    } finally {
+      if (mounted) {
+        _togglingEntryIds.remove(entryId);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final detailAsync = ref.watch(sessionDetailProvider(widget.sessionId));
+    final shortagesAsync = ref.watch(
+      sessionShortagesProvider(widget.sessionId),
+    );
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -38,7 +79,9 @@ class SessionDetailPage extends ConsumerWidget {
                     icon: const Icon(Icons.edit_outlined),
                     tooltip: '编辑任务',
                     onPressed: () {
-                      context.push('/outings/sessions/$sessionId/edit');
+                      context.push(
+                        '/outings/sessions/${widget.sessionId}/edit',
+                      );
                     },
                   ),
                   IconButton(
@@ -47,7 +90,7 @@ class SessionDetailPage extends ConsumerWidget {
                     onPressed: () async {
                       final deleted = await SessionDeleteDialog.show(
                         context,
-                        sessionId: sessionId,
+                        sessionId: widget.sessionId,
                         sessionTitle: detail.session.title,
                       );
                       if (deleted == true && context.mounted) {
@@ -99,7 +142,7 @@ class SessionDetailPage extends ConsumerWidget {
                 const SizedBox(height: 16),
                 FilledButton.tonal(
                   onPressed: () =>
-                      ref.invalidate(sessionDetailProvider(sessionId)),
+                      ref.invalidate(sessionDetailProvider(widget.sessionId)),
                   child: const Text('重试'),
                 ),
               ],
@@ -260,7 +303,6 @@ class SessionDetailPage extends ConsumerWidget {
                 for (var i = 0; i < entries.length; i++) ...[
                   _buildEntryCard(
                     context,
-                    ref: ref,
                     detail: entries[i],
                     shortage: shortageMap[entries[i].entry.id],
                     isCompleted: isCompleted,
@@ -292,7 +334,10 @@ class SessionDetailPage extends ConsumerWidget {
                           try {
                             await ref
                                 .read(sessionRepositoryProvider)
-                                .complete(sessionId, confirmedUnchecked: true);
+                                .complete(
+                                  widget.sessionId,
+                                  confirmedUnchecked: true,
+                                );
                             ref.read(sessionRefreshProvider.notifier).refresh();
                             ref.invalidate(activeSessionsProvider);
 
@@ -359,7 +404,6 @@ class SessionDetailPage extends ConsumerWidget {
 
   Widget _buildEntryCard(
     BuildContext context, {
-    required WidgetRef ref,
     required SessionEntryDetail detail,
     SessionQuantityShortage? shortage,
     required bool isCompleted,
@@ -375,23 +419,7 @@ class SessionDetailPage extends ConsumerWidget {
           : theme.colorScheme.surface,
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: isCompleted
-            ? null
-            : () async {
-                final newValue = !isChecked;
-                try {
-                  await ref
-                      .read(sessionRepositoryProvider)
-                      .setChecked(sessionId, entry.id, newValue);
-                  ref.read(sessionRefreshProvider.notifier).refresh();
-                  ref.invalidate(activeSessionsProvider);
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context)
-                        .showSnackBar(SnackBar(content: Text('更新勾选状态失败: $e')));
-                  }
-                }
-              },
+        onTap: isCompleted ? null : () => _handleToggleCheck(detail),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           child: Row(
@@ -401,22 +429,7 @@ class SessionDetailPage extends ConsumerWidget {
                 value: isChecked,
                 onChanged: isCompleted
                     ? null
-                    : (val) async {
-                        if (val == null) return;
-                        try {
-                          await ref
-                              .read(sessionRepositoryProvider)
-                              .setChecked(sessionId, entry.id, val);
-                          ref.read(sessionRefreshProvider.notifier).refresh();
-                          ref.invalidate(activeSessionsProvider);
-                        } catch (e) {
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('更新勾选状态失败: $e')),
-                            );
-                          }
-                        }
-                      },
+                    : (_) => _handleToggleCheck(detail),
               ),
               const SizedBox(width: 8),
               Expanded(

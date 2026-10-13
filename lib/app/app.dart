@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'router/app_router.dart';
+import 'theme/app_theme.dart';
 
 class PersonalItemsApp extends StatelessWidget {
   const PersonalItemsApp({super.key, this.router});
@@ -13,10 +14,7 @@ class PersonalItemsApp extends StatelessWidget {
     return MaterialApp.router(
       title: '个人物品与出门助手',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
-      ),
+      theme: AppTheme.light,
       routerConfig: router ?? appRouter,
     );
   }

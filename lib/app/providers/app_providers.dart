@@ -7,6 +7,8 @@ import '../../data/repositories/item_repository.dart';
 import '../../data/repositories/location_repository.dart';
 import '../../data/repositories/session_repository.dart';
 import '../../data/repositories/template_repository.dart';
+import '../../features/outings/application/session_providers.dart';
+import '../../features/outings/application/template_providers.dart';
 
 typedef AppDatabaseFactory = AppDatabase Function();
 
@@ -42,13 +44,16 @@ final sessionRepositoryProvider = Provider<SessionRepository>((ref) {
 });
 
 final activeSessionsProvider = FutureProvider.autoDispose((ref) {
+  ref.watch(sessionRefreshProvider);
   return ref.watch(sessionRepositoryProvider).listActive();
 });
 
 final templatesProvider = FutureProvider.autoDispose((ref) {
+  ref.watch(templateRefreshProvider);
   return ref.watch(templateRepositoryProvider).listAll();
 });
 
 final recentTemplatesProvider = FutureProvider.autoDispose((ref) {
+  ref.watch(templateRefreshProvider);
   return ref.watch(templateRepositoryProvider).listRecentlyUsed(limit: 4);
 });

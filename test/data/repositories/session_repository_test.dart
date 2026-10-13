@@ -1371,4 +1371,88 @@ void main() {
     expect(detail.entries[2].displayName, 'Newly Added Text');
     expect(detail.entries[2].isChecked, isFalse);
   });
+
+  test(
+    'saveActiveSession rejects duplicate existing entry IDs and rolls back',
+    () async {
+      final locationId = await insertLocation('Bedroom');
+      final item = await createItem(name: 'Watch', locationId: locationId);
+
+      final sessionId = await repository.createDirect(
+        title: 'Task for A1 test',
+        entries: [
+          SessionEntryInput.registered(itemId: item),
+          const SessionEntryInput.text(textName: 'Note'),
+        ],
+      );
+
+      final entries = await readRawEntries(sessionId);
+      final targetId = entries.first.id;
+
+      // Pass duplicate targetId in the same request
+      await expectLater(
+        repository.saveActiveSession(
+          sessionId: sessionId,
+          title: 'New Title',
+          entries: [
+            EditableSessionEntryInput.registered(
+              id: targetId,
+              itemId: item,
+              requiredQuantity: 2,
+            ),
+            EditableSessionEntryInput.registered(
+              id: targetId, // DUPLICATE ID
+              itemId: item,
+              requiredQuantity: 3,
+            ),
+          ],
+        ),
+        sessionError(SessionRepositoryErrorCode.invalidItem),
+      );
+
+      // Verify rollback: title and items untouched
+      final unchanged = await repository.getDetail(sessionId);
+      expect(unchanged.session.title, 'Task for A1 test');
+      expect(unchanged.entries.length, 2);
+      expect(unchanged.entries.first.entry.requiredQuantity, 1);
+    },
+  );
+
+  test(
+    'saveActiveSession rejects entry ID belonging to a different task',
+    () async {
+      final locationId = await insertLocation('Bedroom');
+      final item = await createItem(name: 'Badge', locationId: locationId);
+
+      final session1 = await repository.createDirect(
+        title: 'Task 1',
+        entries: [SessionEntryInput.registered(itemId: item)],
+      );
+      final session2 = await repository.createDirect(
+        title: 'Task 2',
+        entries: [const SessionEntryInput.text(textName: 'Some text')],
+      );
+
+      final session1EntryId = (await readRawEntries(session1)).first.id;
+
+      // Try to update session 2 using session 1's entry ID
+      await expectLater(
+        repository.saveActiveSession(
+          sessionId: session2,
+          title: 'Hacked Task 2',
+          entries: [
+            EditableSessionEntryInput.text(
+              id: session1EntryId, // does NOT belong to session 2
+              textName: 'Injected text',
+              requiredQuantity: 1,
+            ),
+          ],
+        ),
+        sessionError(SessionRepositoryErrorCode.sessionItemNotFound),
+      );
+
+      final unchanged2 = await repository.getDetail(session2);
+      expect(unchanged2.session.title, 'Task 2');
+    },
+  );
 }
