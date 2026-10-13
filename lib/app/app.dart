@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import 'router/app_router.dart';
 
 class PersonalItemsApp extends StatelessWidget {
-  const PersonalItemsApp({super.key});
+  const PersonalItemsApp({super.key, this.router});
+
+  final GoRouter? router;
 
   @override
   Widget build(BuildContext context) {
@@ -11,12 +14,10 @@ class PersonalItemsApp extends StatelessWidget {
       title: '个人物品与出门助手',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
-        ),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
-      routerConfig: appRouter,
+      routerConfig: router ?? appRouter,
     );
   }
 }
