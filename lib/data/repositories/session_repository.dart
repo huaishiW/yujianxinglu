@@ -67,6 +67,36 @@ class SessionEntryInput {
   final int? sortOrder;
 }
 
+class EditableSessionEntryInput {
+  const EditableSessionEntryInput.registered({
+    this.id,
+    required this.itemId,
+    this.requiredQuantity = 1,
+  }) : itemType = registeredSessionItemType,
+       textName = null;
+
+  const EditableSessionEntryInput.text({
+    this.id,
+    required this.textName,
+    this.requiredQuantity = 1,
+  }) : itemType = textSessionItemType,
+       itemId = null;
+
+  const EditableSessionEntryInput.raw({
+    this.id,
+    required this.itemType,
+    this.itemId,
+    this.textName,
+    this.requiredQuantity = 1,
+  });
+
+  final int? id;
+  final String itemType;
+  final int? itemId;
+  final String? textName;
+  final int requiredQuantity;
+}
+
 class SessionDetail {
   const SessionDetail({required this.session, required this.entries});
 
@@ -530,6 +560,224 @@ class SessionRepository {
           _ensureUpdated(updated, expected: 1, message: '调整出门任务条目排序失败');
         }
         await _touchSession(sessionId);
+      });
+    });
+  }
+
+  Future<SessionDetail> saveActiveSession({
+    required int sessionId,
+    required String title,
+    required List<EditableSessionEntryInput> entries,
+  }) {
+    return _runWithDataGuard('保存出门任务失败', () {
+      return db.transaction(() async {
+        await _requireActive(sessionId);
+        final normalizedTitle = _normalizeTitle(title);
+        if (entries.isEmpty) {
+          throw const SessionRepositoryException(
+            SessionRepositoryErrorCode.emptySession,
+            '出门任务至少需要一个条目',
+          );
+        }
+
+        final registeredItemIds = <int>{};
+        for (final entry in entries) {
+          if (entry.itemType == registeredSessionItemType &&
+              entry.itemId != null) {
+            if (!registeredItemIds.add(entry.itemId!)) {
+              throw const SessionRepositoryException(
+                SessionRepositoryErrorCode.duplicateRegisteredItem,
+                '同一出门任务中不能重复关联同一件登记物品',
+              );
+            }
+          }
+        }
+
+        final currentEntries = await _readEntries(sessionId);
+        final currentMap = {for (final e in currentEntries) e.id: e};
+        final retainedIds = <int>{};
+
+        for (var index = 0; index < entries.length; index += 1) {
+          final input = entries[index];
+          _validateRequiredQuantity(input.requiredQuantity);
+
+          if (input.id != null) {
+            final entryId = input.id!;
+            final current = currentMap[entryId];
+            if (current == null) {
+              throw const SessionRepositoryException(
+                SessionRepositoryErrorCode.sessionItemNotFound,
+                '出门任务条目不存在',
+              );
+            }
+            retainedIds.add(entryId);
+
+            switch (input.itemType) {
+              case registeredSessionItemType:
+                if (input.itemId == null || input.textName != null) {
+                  throw const SessionRepositoryException(
+                    SessionRepositoryErrorCode.invalidItem,
+                    '登记物品条目字段组合无效',
+                  );
+                }
+                final live = await _readLiveItem(input.itemId!);
+                final shouldResetChecked =
+                    current.itemType != registeredSessionItemType ||
+                    current.itemId != input.itemId ||
+                    current.requiredQuantity != input.requiredQuantity;
+
+                final updated =
+                    await (db.update(
+                      db.sessionItems,
+                    )..where((t) => t.id.equals(entryId))).write(
+                      SessionItemsCompanion(
+                        itemType: const Value(registeredSessionItemType),
+                        itemId: Value(input.itemId),
+                        textName: const Value(null),
+                        nameSnapshot: Value(live.item.name),
+                        locationSnapshot: Value(live.locationPath),
+                        requiredQuantity: Value(input.requiredQuantity),
+                        checked: shouldResetChecked
+                            ? const Value(0)
+                            : const Value.absent(),
+                        checkedAt: shouldResetChecked
+                            ? const Value(null)
+                            : const Value.absent(),
+                        sortOrder: Value(index),
+                      ),
+                    );
+                _ensureUpdated(updated, expected: 1, message: '保存出门任务条目失败');
+              case textSessionItemType:
+                if (input.itemId != null) {
+                  throw const SessionRepositoryException(
+                    SessionRepositoryErrorCode.invalidItem,
+                    '普通文本条目不能保存物品引用',
+                  );
+                }
+                final textName = _normalizeItemName(input.textName);
+                final shouldResetChecked =
+                    current.itemType != textSessionItemType ||
+                    current.textName != textName ||
+                    current.requiredQuantity != input.requiredQuantity;
+
+                final updated =
+                    await (db.update(
+                      db.sessionItems,
+                    )..where((t) => t.id.equals(entryId))).write(
+                      SessionItemsCompanion(
+                        itemType: const Value(textSessionItemType),
+                        itemId: const Value(null),
+                        textName: Value(textName),
+                        nameSnapshot: Value(textName),
+                        locationSnapshot: const Value(null),
+                        requiredQuantity: Value(input.requiredQuantity),
+                        checked: shouldResetChecked
+                            ? const Value(0)
+                            : const Value.absent(),
+                        checkedAt: shouldResetChecked
+                            ? const Value(null)
+                            : const Value.absent(),
+                        sortOrder: Value(index),
+                      ),
+                    );
+                _ensureUpdated(updated, expected: 1, message: '保存出门任务条目失败');
+              default:
+                throw const SessionRepositoryException(
+                  SessionRepositoryErrorCode.invalidItem,
+                  '出门任务条目类型不合法',
+                );
+            }
+          } else {
+            switch (input.itemType) {
+              case registeredSessionItemType:
+                if (input.itemId == null || input.textName != null) {
+                  throw const SessionRepositoryException(
+                    SessionRepositoryErrorCode.invalidItem,
+                    '登记物品条目字段组合无效',
+                  );
+                }
+                final live = await _readLiveItem(input.itemId!);
+                await db
+                    .into(db.sessionItems)
+                    .insert(
+                      SessionItemsCompanion(
+                        sessionId: Value(sessionId),
+                        itemType: const Value(registeredSessionItemType),
+                        itemId: Value(input.itemId),
+                        textName: const Value(null),
+                        nameSnapshot: Value(live.item.name),
+                        locationSnapshot: Value(live.locationPath),
+                        requiredQuantity: Value(input.requiredQuantity),
+                        checked: const Value(0),
+                        checkedAt: const Value(null),
+                        sortOrder: Value(index),
+                      ),
+                    );
+              case textSessionItemType:
+                if (input.itemId != null) {
+                  throw const SessionRepositoryException(
+                    SessionRepositoryErrorCode.invalidItem,
+                    '普通文本条目不能保存物品引用',
+                  );
+                }
+                final textName = _normalizeItemName(input.textName);
+                await db
+                    .into(db.sessionItems)
+                    .insert(
+                      SessionItemsCompanion(
+                        sessionId: Value(sessionId),
+                        itemType: const Value(textSessionItemType),
+                        itemId: const Value(null),
+                        textName: Value(textName),
+                        nameSnapshot: Value(textName),
+                        locationSnapshot: const Value(null),
+                        requiredQuantity: Value(input.requiredQuantity),
+                        checked: const Value(0),
+                        checkedAt: const Value(null),
+                        sortOrder: Value(index),
+                      ),
+                    );
+              default:
+                throw const SessionRepositoryException(
+                  SessionRepositoryErrorCode.invalidItem,
+                  '出门任务条目类型不合法',
+                );
+            }
+          }
+        }
+
+        final idsToDelete = currentEntries
+            .map((e) => e.id)
+            .where((id) => !retainedIds.contains(id))
+            .toList();
+        if (idsToDelete.isNotEmpty) {
+          final deleted = await (db.delete(
+            db.sessionItems,
+          )..where((t) => t.id.isIn(idsToDelete))).go();
+          _ensureUpdated(
+            deleted,
+            expected: idsToDelete.length,
+            message: '删除未保留出门任务条目失败',
+          );
+        }
+
+        final updatedSession =
+            await (db.update(
+              db.outgoingSessions,
+            )..where((t) => t.id.equals(sessionId))).write(
+              OutgoingSessionsCompanion(
+                title: Value(normalizedTitle),
+                updatedAt: Value(_now()),
+              ),
+            );
+        _ensureUpdated(updatedSession, expected: 1, message: '更新出门任务失败');
+
+        final session = await _requireSession(sessionId);
+        final details = await _readEntryDetails(session);
+        return SessionDetail(
+          session: session,
+          entries: List.unmodifiable(details),
+        );
       });
     });
   }

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../data/repositories/template_repository.dart';
 import '../../application/template_providers.dart';
+import '../widgets/create_from_template_dialog.dart';
 import '../widgets/template_delete_dialog.dart';
 
 class TemplateDetailPage extends ConsumerWidget {
@@ -202,14 +203,15 @@ class TemplateDetailPage extends ConsumerWidget {
                   child: FilledButton.icon(
                     icon: const Icon(Icons.directions_walk),
                     label: const Text('以此模板开始出门'),
-                    onPressed: () {
-                      ScaffoldMessenger.of(context)
-                        ..hideCurrentSnackBar()
-                        ..showSnackBar(
-                          const SnackBar(
-                            content: Text('“使用模板创建出门任务”功能将在下一阶段（TASK 11）正式开放'),
-                          ),
-                        );
+                    onPressed: () async {
+                      final sessionId = await CreateFromTemplateDialog.show(
+                        context,
+                        templateId: templateId,
+                        templateName: detail.template.name,
+                      );
+                      if (sessionId != null && context.mounted) {
+                        context.push('/outings/sessions/$sessionId');
+                      }
                     },
                   ),
                 ),

@@ -7,6 +7,8 @@ import '../../features/items/presentation/pages/item_edit_page.dart';
 import '../../features/items/presentation/pages/item_search_page.dart';
 import '../../features/items/presentation/pages/items_page.dart';
 import '../../features/outings/presentation/pages/outings_page.dart';
+import '../../features/outings/presentation/pages/session_detail_page.dart';
+import '../../features/outings/presentation/pages/session_edit_page.dart';
 import '../../features/outings/presentation/pages/template_detail_page.dart';
 import '../../features/outings/presentation/pages/template_edit_page.dart';
 
@@ -90,6 +92,26 @@ GoRouter createAppRouter({String initialLocation = '/home'}) {
                         builder: (context, state) {
                           final id = int.parse(state.pathParameters['id']!);
                           return TemplateEditPage(templateId: id);
+                        },
+                      ),
+                    ],
+                  ),
+                  GoRoute(
+                    path: 'sessions/new',
+                    builder: (context, state) => const SessionEditPage(),
+                  ),
+                  GoRoute(
+                    path: 'sessions/:id',
+                    builder: (context, state) {
+                      final id = int.parse(state.pathParameters['id']!);
+                      return SessionDetailPage(sessionId: id);
+                    },
+                    routes: [
+                      GoRoute(
+                        path: 'edit',
+                        builder: (context, state) {
+                          final id = int.parse(state.pathParameters['id']!);
+                          return SessionEditPage(sessionId: id);
                         },
                       ),
                     ],

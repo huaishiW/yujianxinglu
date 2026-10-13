@@ -255,10 +255,14 @@ void main() {
       );
       expect(shortages.first.itemId, itemId);
 
-      // 点击“以此模板开始出门”，验证弹出功能将在下一阶段开放的友好提示
+      // 点击“以此模板开始出门”，弹出创建弹窗并成功生成新任务
       await tester.tap(find.widgetWithText(FilledButton, '以此模板开始出门'));
       await tester.pumpAndSettle();
-      expect(find.text('“使用模板创建出门任务”功能将在下一阶段（TASK 11）正式开放'), findsOneWidget);
+      expect(find.text('开始本次出门'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, '开始出门'));
+      await tester.pumpAndSettle();
+      expect(find.text('防护模板'), findsWidgets);
+      expect(find.text('进行中'), findsOneWidget);
     });
   });
 

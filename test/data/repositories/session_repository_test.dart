@@ -1305,4 +1305,70 @@ void main() {
     );
     expect(await repository.listEntries(sessionId), hasLength(1));
   });
+
+  test('saveActiveSession atomically updates title and entries, applying checked reset rules', () async {
+    final locationId = await insertLocation('Bedroom');
+    final item1 = await createItem(name: 'Item 1', locationId: locationId);
+
+    final sessionId = await repository.createDirect(
+      title: 'Initial Title',
+      entries: [
+        SessionEntryInput.registered(itemId: item1, requiredQuantity: 1),
+        const SessionEntryInput.text(
+          textName: 'Text Item 1',
+          requiredQuantity: 1,
+        ),
+      ],
+    );
+
+    final rawEntries = await readRawEntries(sessionId);
+    final regEntryId = rawEntries[0].id;
+    final textEntryId = rawEntries[1].id;
+
+    // Check both entries initially
+    await repository.setChecked(sessionId, regEntryId, true);
+    await repository.setChecked(sessionId, textEntryId, true);
+
+    // Save active session:
+    // 1. Rename session
+    // 2. Reorder Text Item to first place (only reorder, no content change -> checked preserved!)
+    // 3. Change Item 1 quantity to 3 (content change -> checked reset to 0!)
+    // 4. Add a new text item (new -> checked = 0)
+    final detail = await repository.saveActiveSession(
+      sessionId: sessionId,
+      title: 'Updated Title',
+      entries: [
+        EditableSessionEntryInput.text(
+          id: textEntryId,
+          textName: 'Text Item 1',
+          requiredQuantity: 1,
+        ),
+        EditableSessionEntryInput.registered(
+          id: regEntryId,
+          itemId: item1,
+          requiredQuantity: 3,
+        ),
+        const EditableSessionEntryInput.text(
+          textName: 'Newly Added Text',
+          requiredQuantity: 2,
+        ),
+      ],
+    );
+
+    expect(detail.session.title, 'Updated Title');
+    expect(detail.entries.length, 3);
+
+    // Entry 0: Text Item 1, preserved checked
+    expect(detail.entries[0].entry.id, textEntryId);
+    expect(detail.entries[0].isChecked, isTrue);
+
+    // Entry 1: Item 1, quantity changed from 1 to 3, reset checked
+    expect(detail.entries[1].entry.id, regEntryId);
+    expect(detail.entries[1].entry.requiredQuantity, 3);
+    expect(detail.entries[1].isChecked, isFalse);
+
+    // Entry 2: Newly added
+    expect(detail.entries[2].displayName, 'Newly Added Text');
+    expect(detail.entries[2].isChecked, isFalse);
+  });
 }

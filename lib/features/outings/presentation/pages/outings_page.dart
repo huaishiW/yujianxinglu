@@ -4,7 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../app/providers/app_providers.dart';
 import '../../../../data/local/app_database.dart';
+import '../../application/session_providers.dart';
 import '../../application/template_providers.dart';
+import '../widgets/session_delete_dialog.dart';
 import '../widgets/template_delete_dialog.dart';
 
 class OutingsPage extends ConsumerStatefulWidget {
@@ -26,7 +28,7 @@ class _OutingsPageState extends ConsumerState<OutingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final activeSessions = ref.watch(activeSessionsProvider);
+    final activeSessions = ref.watch(sessionListProvider);
     final templateListAsync = ref.watch(templateListProvider(_keyword));
     final recentTemplatesAsync = ref.watch(recentTemplatesProvider);
     final theme = Theme.of(context);
@@ -46,50 +48,80 @@ class _OutingsPageState extends ConsumerState<OutingsPage> {
         body: TabBarView(
           children: [
             // Tab 1: 进行中的任务
-            RefreshIndicator(
-              onRefresh: () async {
-                ref.invalidate(activeSessionsProvider);
-                await ref.read(activeSessionsProvider.future);
-              },
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                children: [
-                  const Text(
-                    '进行中的任务',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 8),
-                  activeSessions.when(
-                    loading: () => const LinearProgressIndicator(),
-                    error: (error, stackTrace) => _ErrorText(
-                      message: '读取进行中的任务失败',
-                      onRetry: () => ref.invalidate(activeSessionsProvider),
+            Scaffold(
+              body: RefreshIndicator(
+                onRefresh: () async {
+                  ref.read(sessionRefreshProvider.notifier).refresh();
+                  ref.invalidate(activeSessionsProvider);
+                  await ref.read(sessionListProvider.future);
+                },
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                  children: [
+                    const Text(
+                      '进行中的任务',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                    data: (sessions) {
-                      if (sessions.isEmpty) {
-                        return const _EmptyText(text: '暂无进行中的任务');
-                      }
-                      return Column(
-                        children: [
-                          for (final session in sessions)
-                            Card(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              child: ListTile(
-                                leading: const Icon(Icons.checklist_outlined),
-                                title: Text(session.title),
-                                subtitle: const Text('进行中'),
+                    const SizedBox(height: 8),
+                    activeSessions.when(
+                      loading: () => const LinearProgressIndicator(),
+                      error: (error, stackTrace) => _ErrorText(
+                        message: '读取进行中的任务失败',
+                        onRetry: () => ref.invalidate(sessionListProvider),
+                      ),
+                      data: (sessions) {
+                        if (sessions.isEmpty) {
+                          return const _EmptyText(text: '暂无进行中的任务，点击右下角创建');
+                        }
+                        return Column(
+                          children: [
+                            for (final session in sessions)
+                              _SessionCard(
+                                key: ValueKey('session-card-${session.id}'),
+                                session: session,
+                                onOpen: () => context.push(
+                                  '/outings/sessions/${session.id}',
+                                ),
+                                onEdit: () => context.push(
+                                  '/outings/sessions/${session.id}/edit',
+                                ),
+                                onDelete: () async {
+                                  final deleted =
+                                      await SessionDeleteDialog.show(
+                                        context,
+                                        sessionId: session.id,
+                                        sessionTitle: session.title,
+                                      );
+                                  if (deleted == true && context.mounted) {
+                                    ScaffoldMessenger.of(context)
+                                      ..hideCurrentSnackBar()
+                                      ..showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            '已删除出门任务“${session.title}”',
+                                          ),
+                                        ),
+                                      );
+                                  }
+                                },
                               ),
-                            ),
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    '任务清单操作将在后续阶段（TASK 11）正式开放',
-                    style: TextStyle(color: Colors.black54),
-                  ),
-                ],
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              floatingActionButton: FloatingActionButton.extended(
+                key: const ValueKey('create-session-fab'),
+                onPressed: () {
+                  context.push('/outings/sessions/new');
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('新建任务'),
               ),
             ),
 
@@ -286,6 +318,127 @@ class _OutingsPageState extends ConsumerState<OutingsPage> {
         ),
       ),
     );
+  }
+}
+
+class _SessionCard extends ConsumerWidget {
+  const _SessionCard({
+    required this.session,
+    required this.onOpen,
+    required this.onEdit,
+    required this.onDelete,
+    super.key,
+  });
+
+  final OutgoingSession session;
+  final VoidCallback onOpen;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final detailAsync = ref.watch(sessionDetailProvider(session.id));
+    final shortagesAsync = ref.watch(sessionShortagesProvider(session.id));
+    final theme = Theme.of(context);
+
+    final detail = detailAsync.value;
+    final totalCount = detail?.entries.length ?? 0;
+    final checkedCount = detail?.checkedCount ?? 0;
+    final shortageCount = shortagesAsync.value?.length ?? 0;
+    final progress = totalCount == 0 ? 0.0 : checkedCount / totalCount;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: shortageCount > 0
+              ? theme.colorScheme.errorContainer
+              : theme.colorScheme.primaryContainer,
+          child: Icon(
+            shortageCount > 0
+                ? Icons.warning_amber_rounded
+                : Icons.checklist_outlined,
+            color: shortageCount > 0
+                ? theme.colorScheme.error
+                : theme.colorScheme.onPrimaryContainer,
+          ),
+        ),
+        title: Text(
+          session.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Text(
+                  detail == null ? '加载中...' : '$checkedCount / $totalCount 已携带',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                if (shortageCount > 0) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    '⚠️ $shortageCount 项缺货',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.error,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 4),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 4,
+                backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '更新于: ${_formatTime(session.updatedAt)}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.outline,
+              ),
+            ),
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: '编辑',
+              onPressed: onEdit,
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: '删除',
+              onPressed: onDelete,
+            ),
+          ],
+        ),
+        onTap: onOpen,
+      ),
+    );
+  }
+
+  String _formatTime(int ms) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    final h = dt.hour.toString().padLeft(2, '0');
+    final min = dt.minute.toString().padLeft(2, '0');
+    return '$m-$d $h:$min';
   }
 }
 
