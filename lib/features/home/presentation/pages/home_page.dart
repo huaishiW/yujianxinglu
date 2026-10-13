@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../app/providers/app_providers.dart';
 
@@ -19,8 +20,7 @@ class HomePage extends ConsumerWidget {
           TextField(
             readOnly: true,
             onTap: () {
-              ScaffoldMessenger.of(context)
-                  .showSnackBar(const SnackBar(content: Text('物品搜索将在后续阶段接入')));
+              context.push('/items/search');
             },
             decoration: const InputDecoration(
               labelText: '搜索物品名称',

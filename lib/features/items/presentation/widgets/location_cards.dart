@@ -68,9 +68,10 @@ class LocationCard extends StatelessWidget {
 }
 
 class DirectItemCard extends StatelessWidget {
-  const DirectItemCard({required this.item, super.key});
+  const DirectItemCard({required this.item, this.onTap, super.key});
 
   final Item item;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -78,9 +79,11 @@ class DirectItemCard extends StatelessWidget {
       key: ValueKey('direct-item-card-${item.id}'),
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
+        onTap: onTap,
         leading: const CircleAvatar(child: Icon(Icons.inventory_2_outlined)),
         title: Text(item.name, maxLines: 2, overflow: TextOverflow.ellipsis),
         subtitle: Text('数量：${item.quantity}'),
+        trailing: onTap != null ? const Icon(Icons.chevron_right) : null,
       ),
     );
   }

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../app/providers/app_providers.dart';
 import '../../../../data/local/app_database.dart';
@@ -43,6 +44,20 @@ class _ItemsPageState extends ConsumerState<ItemsPage> {
         appBar: AppBar(
           title: const Text('物品'),
           actions: [
+            IconButton(
+              icon: const Icon(Icons.search),
+              tooltip: '搜索物品',
+              onPressed: () => context.push('/items/search'),
+            ),
+            IconButton(
+              icon: const Icon(Icons.add_box_outlined),
+              tooltip: '添加物品',
+              onPressed: () => context.push(
+                currentLocationId == null
+                    ? '/items/new'
+                    : '/items/new?locationId=$currentLocationId',
+              ),
+            ),
             if (currentLocationId != null)
               LocationActionsButton(
                 onSelected: (action) {
@@ -131,7 +146,18 @@ class _ItemsPageState extends ConsumerState<ItemsPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const LocationSectionHeader(title: '当前直接存放的物品'),
+        LocationSectionHeader(
+          title: '当前直接存放的物品',
+          action: TextButton.icon(
+            icon: const Icon(Icons.add),
+            label: const Text('添加物品'),
+            onPressed: () {
+              if (_currentLocationId != null) {
+                context.push('/items/new?locationId=$_currentLocationId');
+              }
+            },
+          ),
+        ),
         items.when(
           loading: () => const _SectionLoading(),
           error: (error, stackTrace) => _SectionError(
@@ -146,7 +172,11 @@ class _ItemsPageState extends ConsumerState<ItemsPage> {
             }
             return Column(
               children: [
-                for (final item in itemList) DirectItemCard(item: item),
+                for (final item in itemList)
+                  DirectItemCard(
+                    item: item,
+                    onTap: () => context.push('/items/${item.id}'),
+                  ),
               ],
             );
           },
