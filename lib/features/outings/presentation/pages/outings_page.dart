@@ -1,85 +1,398 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../app/providers/app_providers.dart';
+import '../../../../data/local/app_database.dart';
+import '../../application/template_providers.dart';
+import '../widgets/template_delete_dialog.dart';
 
-class OutingsPage extends ConsumerWidget {
+class OutingsPage extends ConsumerStatefulWidget {
   const OutingsPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final activeSessions = ref.watch(activeSessionsProvider);
-    final templates = ref.watch(templatesProvider);
+  ConsumerState<OutingsPage> createState() => _OutingsPageState();
+}
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('出门')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        children: [
-          const Text(
-            '进行中的任务',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+class _OutingsPageState extends ConsumerState<OutingsPage> {
+  final _searchController = TextEditingController();
+  String _keyword = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activeSessions = ref.watch(activeSessionsProvider);
+    final templateListAsync = ref.watch(templateListProvider(_keyword));
+    final recentTemplatesAsync = ref.watch(recentTemplatesProvider);
+    final theme = Theme.of(context);
+
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('出门'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(icon: Icon(Icons.checklist_outlined), text: '进行中'),
+              Tab(icon: Icon(Icons.description_outlined), text: '模板'),
+            ],
           ),
-          const SizedBox(height: 8),
-          activeSessions.when(
-            loading: () => const LinearProgressIndicator(),
-            error: (error, stackTrace) => _ErrorText(
-              message: '读取进行中的任务失败',
-              onRetry: () => ref.invalidate(activeSessionsProvider),
-            ),
-            data: (sessions) {
-              if (sessions.isEmpty) {
-                return const _EmptyText(text: '暂无进行中的任务');
-              }
-              return Column(
+        ),
+        body: TabBarView(
+          children: [
+            // Tab 1: 进行中的任务
+            RefreshIndicator(
+              onRefresh: () async {
+                ref.invalidate(activeSessionsProvider);
+                await ref.read(activeSessionsProvider.future);
+              },
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                 children: [
-                  for (final session in sessions)
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.checklist_outlined),
-                      title: Text(session.title),
-                      subtitle: const Text('进行中'),
+                  const Text(
+                    '进行中的任务',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 8),
+                  activeSessions.when(
+                    loading: () => const LinearProgressIndicator(),
+                    error: (error, stackTrace) => _ErrorText(
+                      message: '读取进行中的任务失败',
+                      onRetry: () => ref.invalidate(activeSessionsProvider),
                     ),
+                    data: (sessions) {
+                      if (sessions.isEmpty) {
+                        return const _EmptyText(text: '暂无进行中的任务');
+                      }
+                      return Column(
+                        children: [
+                          for (final session in sessions)
+                            Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: ListTile(
+                                leading: const Icon(Icons.checklist_outlined),
+                                title: Text(session.title),
+                                subtitle: const Text('进行中'),
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    '任务清单操作将在后续阶段（TASK 11）正式开放',
+                    style: TextStyle(color: Colors.black54),
+                  ),
                 ],
-              );
-            },
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            '出门模板',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          templates.when(
-            loading: () => const LinearProgressIndicator(),
-            error: (error, stackTrace) => _ErrorText(
-              message: '读取出门模板失败',
-              onRetry: () => ref.invalidate(templatesProvider),
+              ),
             ),
-            data: (templateList) {
-              if (templateList.isEmpty) {
-                return const _EmptyText(text: '暂无出门模板');
-              }
-              return Column(
-                children: [
-                  for (final template in templateList)
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.description_outlined),
-                      title: Text(template.name),
+
+            // Tab 2: 出门模板管理
+            Scaffold(
+              body: RefreshIndicator(
+                onRefresh: () async {
+                  ref.read(templateRefreshProvider.notifier).refresh();
+                  ref.invalidate(templateListProvider(_keyword));
+                  ref.invalidate(recentTemplatesProvider);
+                },
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                  children: [
+                    TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        hintText: '搜索出门模板名称...',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: _searchController.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _keyword = '');
+                                },
+                              )
+                            : null,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        isDense: true,
+                      ),
+                      onChanged: (val) {
+                        setState(() => _keyword = val.trim());
+                      },
                     ),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            '模板编辑和任务操作将在后续阶段接入',
-            style: TextStyle(color: Colors.black54),
-          ),
-        ],
+                    if (_keyword.isEmpty) ...[
+                      recentTemplatesAsync.when(
+                        data: (recentList) {
+                          if (recentList.isEmpty) {
+                            return const SizedBox.shrink();
+                          }
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: 16),
+                              Text(
+                                '最近使用的模板',
+                                style: theme.textTheme.titleSmall?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  for (final template in recentList)
+                                    ActionChip(
+                                      avatar: const Icon(
+                                        Icons.history,
+                                        size: 16,
+                                      ),
+                                      label: Text(template.name),
+                                      onPressed: () {
+                                        context.push(
+                                          '/outings/templates/${template.id}',
+                                        );
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ],
+                          );
+                        },
+                        loading: () => const SizedBox.shrink(),
+                        error: (err, stack) => const SizedBox.shrink(),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          _keyword.isEmpty ? '所有模板' : '搜索结果',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        templateListAsync.maybeWhen(
+                          data: (list) => Text(
+                            '共 ${list.length} 个',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.outline,
+                            ),
+                          ),
+                          orElse: () => const SizedBox.shrink(),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    templateListAsync.when(
+                      loading: () => const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: Center(child: CircularProgressIndicator()),
+                      ),
+                      error: (error, stack) => _ErrorText(
+                        message: '读取出门模板失败，请重试',
+                        onRetry: () =>
+                            ref.invalidate(templateListProvider(_keyword)),
+                      ),
+                      data: (templates) {
+                        if (templates.isEmpty) {
+                          return Center(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 48),
+                              child: Column(
+                                children: [
+                                  Icon(
+                                    Icons.description_outlined,
+                                    size: 48,
+                                    color: theme.colorScheme.outline,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    _keyword.isEmpty
+                                        ? '暂无出门模板，点击右下角创建'
+                                        : '未找到名称包含“$_keyword”的模板',
+                                    style: TextStyle(
+                                      color: theme.colorScheme.outline,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }
+
+                        return Column(
+                          children: [
+                            for (final template in templates)
+                              _TemplateCard(
+                                key: ValueKey('template-card-${template.id}'),
+                                template: template,
+                                onOpen: () {
+                                  context.push(
+                                    '/outings/templates/${template.id}',
+                                  );
+                                },
+                                onEdit: () {
+                                  context.push(
+                                    '/outings/templates/${template.id}/edit',
+                                  );
+                                },
+                                onDelete: () async {
+                                  final deleted =
+                                      await TemplateDeleteDialog.show(
+                                        context,
+                                        templateId: template.id,
+                                        templateName: template.name,
+                                      );
+                                  if (deleted == true && context.mounted) {
+                                    ScaffoldMessenger.of(context)
+                                      ..hideCurrentSnackBar()
+                                      ..showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            '已删除模板“${template.name}”',
+                                          ),
+                                        ),
+                                      );
+                                  }
+                                },
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              floatingActionButton: FloatingActionButton.extended(
+                key: const ValueKey('create-template-fab'),
+                onPressed: () {
+                  context.push('/outings/templates/new');
+                },
+                icon: const Icon(Icons.add),
+                label: const Text('新建模板'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
+  }
+}
+
+class _TemplateCard extends ConsumerWidget {
+  const _TemplateCard({
+    required this.template,
+    required this.onOpen,
+    required this.onEdit,
+    required this.onDelete,
+    super.key,
+  });
+
+  final OutgoingTemplate template;
+  final VoidCallback onOpen;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final detailAsync = ref.watch(templateDetailProvider(template.id));
+    final shortagesAsync = ref.watch(templateShortagesProvider(template.id));
+    final theme = Theme.of(context);
+
+    final entryCount = detailAsync.value?.entries.length;
+    final shortageCount = shortagesAsync.value?.length ?? 0;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: shortageCount > 0
+              ? theme.colorScheme.errorContainer
+              : theme.colorScheme.primaryContainer,
+          child: Icon(
+            shortageCount > 0
+                ? Icons.warning_amber_rounded
+                : Icons.description_outlined,
+            color: shortageCount > 0
+                ? theme.colorScheme.error
+                : theme.colorScheme.onPrimaryContainer,
+          ),
+        ),
+        title: Text(
+          template.name,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 2),
+            Row(
+              children: [
+                Text(
+                  entryCount == null ? '条目读取中...' : '$entryCount 个条目',
+                  style: theme.textTheme.bodySmall,
+                ),
+                if (shortageCount > 0) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    '⚠️ $shortageCount 项缺货',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.error,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            if (template.lastUsedAt != null)
+              Text(
+                '最近使用: ${_formatTime(template.lastUsedAt!)}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              ),
+          ],
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              tooltip: '编辑',
+              onPressed: onEdit,
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              tooltip: '删除',
+              onPressed: onDelete,
+            ),
+          ],
+        ),
+        onTap: onOpen,
+      ),
+    );
+  }
+
+  String _formatTime(int ms) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    final h = dt.hour.toString().padLeft(2, '0');
+    final min = dt.minute.toString().padLeft(2, '0');
+    return '$m-$d $h:$min';
   }
 }
 

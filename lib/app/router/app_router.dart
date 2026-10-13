@@ -7,6 +7,8 @@ import '../../features/items/presentation/pages/item_edit_page.dart';
 import '../../features/items/presentation/pages/item_search_page.dart';
 import '../../features/items/presentation/pages/items_page.dart';
 import '../../features/outings/presentation/pages/outings_page.dart';
+import '../../features/outings/presentation/pages/template_detail_page.dart';
+import '../../features/outings/presentation/pages/template_edit_page.dart';
 
 GoRouter createAppRouter({String initialLocation = '/home'}) {
   return GoRouter(
@@ -71,6 +73,28 @@ GoRouter createAppRouter({String initialLocation = '/home'}) {
               GoRoute(
                 path: '/outings',
                 builder: (context, state) => const OutingsPage(),
+                routes: [
+                  GoRoute(
+                    path: 'templates/new',
+                    builder: (context, state) => const TemplateEditPage(),
+                  ),
+                  GoRoute(
+                    path: 'templates/:id',
+                    builder: (context, state) {
+                      final id = int.parse(state.pathParameters['id']!);
+                      return TemplateDetailPage(templateId: id);
+                    },
+                    routes: [
+                      GoRoute(
+                        path: 'edit',
+                        builder: (context, state) {
+                          final id = int.parse(state.pathParameters['id']!);
+                          return TemplateEditPage(templateId: id);
+                        },
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ],
           ),

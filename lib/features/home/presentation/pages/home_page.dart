@@ -78,9 +78,12 @@ class HomePage extends ConsumerWidget {
                 runSpacing: 8,
                 children: [
                   for (final template in templates)
-                    Chip(
+                    ActionChip(
                       avatar: const Icon(Icons.description_outlined, size: 18),
                       label: Text(template.name),
+                      onPressed: () {
+                        context.push('/outings/templates/${template.id}');
+                      },
                     ),
                 ],
               );
