@@ -1,18 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class AppShell extends StatelessWidget {
+import '../../../features/items/application/location_providers.dart';
+
+class AppShell extends ConsumerWidget {
   const AppShell({required this.navigationShell, super.key});
 
   final StatefulNavigationShell navigationShell;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       body: navigationShell,
       bottomNavigationBar: NavigationBar(
         selectedIndex: navigationShell.currentIndex,
-        onDestinationSelected: navigationShell.goBranch,
+        onDestinationSelected: (index) {
+          if (index == 1) {
+            ref.read(locationBrowserRefreshProvider.notifier).refresh();
+          }
+          navigationShell.goBranch(index);
+        },
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.home_outlined),

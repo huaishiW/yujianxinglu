@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:personal_items_assistant/app/providers/app_providers.dart';
 import 'package:personal_items_assistant/data/local/app_database.dart';
+import 'package:personal_items_assistant/features/items/application/location_providers.dart';
 
 class _TrackingDatabase extends AppDatabase {
   _TrackingDatabase(super.executor);
@@ -87,4 +88,43 @@ void main() {
       expect(database.closeCalls, 1);
     },
   );
+
+  test('location providers query direct children and items from the shared database', () async {
+    final locationRepository = container.read(locationRepositoryProvider);
+    final itemRepository = container.read(itemRepositoryProvider);
+    final rootId = await locationRepository.create(name: '卧室');
+    final childId = await locationRepository.create(
+      name: '书桌',
+      parentId: rootId,
+    );
+    final directItemId = await itemRepository.create(
+      name: '根位置物品',
+      locationId: rootId,
+    );
+    await itemRepository.create(name: '子位置物品', locationId: childId);
+
+    final children = await container.read(
+      locationChildrenProvider(rootId).future,
+    );
+    final directItems = await container.read(
+      locationDirectItemsProvider(rootId).future,
+    );
+
+    expect(children.map((location) => location.id), [childId]);
+    expect(directItems.map((item) => item.id), [directItemId]);
+    expect(
+      identical(
+        container.read(locationRepositoryProvider).db,
+        container.read(appDatabaseProvider),
+      ),
+      isTrue,
+    );
+    expect(
+      identical(
+        container.read(itemRepositoryProvider).db,
+        container.read(appDatabaseProvider),
+      ),
+      isTrue,
+    );
+  });
 }

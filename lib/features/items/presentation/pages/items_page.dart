@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -5,6 +7,10 @@ import '../../../../app/providers/app_providers.dart';
 import '../../../../data/local/app_database.dart';
 import '../../../../data/repositories/location_repository.dart';
 import '../../application/location_providers.dart';
+import '../widgets/location_breadcrumbs.dart';
+import '../widgets/location_cards.dart';
+import '../widgets/location_name_dialog.dart';
+import '../widgets/location_target_picker.dart';
 
 class ItemsPage extends ConsumerStatefulWidget {
   const ItemsPage({super.key});
@@ -16,135 +22,134 @@ class ItemsPage extends ConsumerStatefulWidget {
 class _ItemsPageState extends ConsumerState<ItemsPage> {
   int? _currentLocationId;
   final List<Location> _breadcrumbs = [];
+  bool _isActionInProgress = false;
 
   @override
   Widget build(BuildContext context) {
-    final locations = ref.watch(locationChildrenProvider(_currentLocationId));
+    final currentLocationId = _currentLocationId;
+    final locations = ref.watch(locationChildrenProvider(currentLocationId));
+    final directItems = currentLocationId == null
+        ? null
+        : ref.watch(locationDirectItemsProvider(currentLocationId));
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('物品')),
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
-              child: Text(
-                '收纳位置',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
-              ),
-            ),
-            _buildBreadcrumbs(),
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: _refreshLocations,
-                child: locations.when(
-                  loading: () => ListView(
-                    children: [
-                      SizedBox(
-                        height: 240,
-                        child: const Center(child: CircularProgressIndicator()),
-                      ),
-                    ],
-                  ),
-                  error: (error, stackTrace) => _buildErrorState(error),
-                  data: _buildLocationList,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showCreateLocationDialog,
-        icon: const Icon(Icons.add),
-        label: Text(_currentLocationId == null ? '新建位置' : '新建子位置'),
-      ),
-    );
-  }
-
-  Widget _buildBreadcrumbs() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            TextButton(
-              onPressed: _currentLocationId == null
-                  ? null
-                  : () {
-                      setState(() {
-                        _currentLocationId = null;
-                        _breadcrumbs.clear();
-                      });
-                    },
-              child: const Text('我的收纳位置'),
-            ),
-            for (var index = 0; index < _breadcrumbs.length; index += 1) ...[
-              const Text('/'),
-              TextButton(
-                onPressed: index == _breadcrumbs.length - 1
-                    ? null
-                    : () => _openBreadcrumb(index),
-                child: Text(_breadcrumbs[index].name),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLocationList(List<Location> locations) {
-    if (locations.isEmpty) {
-      return ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          SizedBox(
-            height: 240,
-            child: Center(
-              child: Text(_currentLocationId == null ? '还没有收纳位置' : '当前没有子位置'),
-            ),
-          ),
-        ],
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 96),
-      physics: const AlwaysScrollableScrollPhysics(),
-      itemCount: locations.length,
-      separatorBuilder: (context, index) => const Divider(height: 1),
-      itemBuilder: (context, index) {
-        final location = locations[index];
-        return ListTile(
-          leading: const Icon(Icons.folder_outlined),
-          title: Text(location.name),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => _openLocation(location),
-        );
+    return PopScope(
+      canPop: currentLocationId == null,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && currentLocationId != null) {
+          _goUp();
+        }
       },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('物品'),
+          actions: [
+            if (currentLocationId != null)
+              LocationActionsButton(
+                onSelected: (action) {
+                  unawaited(_handleLocationAction(_breadcrumbs.last, action));
+                },
+              ),
+          ],
+        ),
+        body: SafeArea(
+          child: RefreshIndicator(
+            onRefresh: _refreshCurrentLevel,
+            child: ListView(
+              key: const ValueKey('location-browser'),
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 104),
+              children: [
+                Text(
+                  currentLocationId == null ? '收纳位置' : _breadcrumbs.last.name,
+                  style: Theme.of(context).textTheme.headlineSmall,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                LocationBreadcrumbs(
+                  breadcrumbs: List.unmodifiable(_breadcrumbs),
+                  onRootTap: _goToRoot,
+                  onBreadcrumbTap: _goToBreadcrumb,
+                  onUpTap: currentLocationId == null ? null : _goUp,
+                ),
+                const SizedBox(height: 4),
+                _buildLocationSection(locations),
+                if (directItems != null) ...[
+                  const SizedBox(height: 8),
+                  _buildItemSection(directItems),
+                ],
+              ],
+            ),
+          ),
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _isActionInProgress ? null : _showCreateLocationDialog,
+          icon: const Icon(Icons.add),
+          label: Text(currentLocationId == null ? '新建位置' : '新建子位置'),
+        ),
+      ),
     );
   }
 
-  Widget _buildErrorState(Object error) {
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(24),
+  Widget _buildLocationSection(AsyncValue<List<Location>> locations) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Icon(Icons.error_outline, size: 40),
-        const SizedBox(height: 12),
-        Text(_friendlyError(error), textAlign: TextAlign.center),
-        const SizedBox(height: 16),
-        Center(
-          child: FilledButton.icon(
-            onPressed: () {
-              ref.invalidate(locationChildrenProvider(_currentLocationId));
-            },
-            icon: const Icon(Icons.refresh),
-            label: const Text('重新加载'),
+        const LocationSectionHeader(title: '子位置'),
+        locations.when(
+          loading: () => const _SectionLoading(),
+          error: (error, stackTrace) => _SectionError(
+            message: _friendlyError(error, fallback: '读取子位置失败，请重试'),
+            onRetry: () =>
+                ref.invalidate(locationChildrenProvider(_currentLocationId)),
           ),
+          data: (locationList) {
+            if (locationList.isEmpty) {
+              return _SectionEmpty(
+                text: _currentLocationId == null ? '还没有收纳位置' : '当前没有子位置',
+              );
+            }
+            return Column(
+              children: [
+                for (final location in locationList)
+                  LocationCard(
+                    location: location,
+                    onOpen: () => _openLocation(location),
+                    onAction: (action) {
+                      unawaited(_handleLocationAction(location, action));
+                    },
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildItemSection(AsyncValue<List<Item>> items) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const LocationSectionHeader(title: '当前直接存放的物品'),
+        items.when(
+          loading: () => const _SectionLoading(),
+          error: (error, stackTrace) => _SectionError(
+            message: _friendlyError(error, fallback: '读取直接物品失败，请重试'),
+            onRetry: () => ref.invalidate(
+              locationDirectItemsProvider(_currentLocationId!),
+            ),
+          ),
+          data: (itemList) {
+            if (itemList.isEmpty) {
+              return const _SectionEmpty(text: '当前没有直接存放的物品');
+            }
+            return Column(
+              children: [
+                for (final item in itemList) DirectItemCard(item: item),
+              ],
+            );
+          },
         ),
       ],
     );
@@ -157,138 +162,413 @@ class _ItemsPageState extends ConsumerState<ItemsPage> {
     });
   }
 
-  void _openBreadcrumb(int index) {
+  void _goToRoot() {
+    if (_currentLocationId == null) {
+      return;
+    }
+    setState(() {
+      _currentLocationId = null;
+      _breadcrumbs.clear();
+    });
+  }
+
+  void _goToBreadcrumb(int index) {
+    if (index < 0 || index >= _breadcrumbs.length - 1) {
+      return;
+    }
     setState(() {
       _currentLocationId = _breadcrumbs[index].id;
       _breadcrumbs.removeRange(index + 1, _breadcrumbs.length);
     });
   }
 
-  Future<void> _refreshLocations() async {
-    final provider = locationChildrenProvider(_currentLocationId);
-    ref.invalidate(provider);
-    await ref.read(provider.future);
+  void _goUp() {
+    if (_breadcrumbs.isEmpty) {
+      return;
+    }
+    setState(() {
+      _breadcrumbs.removeLast();
+      _currentLocationId = _breadcrumbs.isEmpty ? null : _breadcrumbs.last.id;
+    });
   }
 
   Future<void> _showCreateLocationDialog() async {
     final parentId = _currentLocationId;
+    final parentPath = parentId == null
+        ? '我的收纳位置'
+        : _breadcrumbs.map((location) => location.name).join(' / ');
+
     await showDialog<bool>(
       context: context,
-      builder: (context) {
-        return _CreateLocationDialog(
-          title: parentId == null ? '新建顶层位置' : '新建子位置',
+      barrierDismissible: false,
+      builder: (context) => LocationNameDialog(
+        title: parentId == null ? '新建顶层位置' : '新建子位置',
+        parentPath: parentPath,
+        onSubmit: (name) async {
+          await ref
+              .read(locationRepositoryProvider)
+              .create(name: name, parentId: parentId);
+          ref.invalidate(locationChildrenProvider(parentId));
+        },
+      ),
+    );
+  }
+
+  Future<void> _handleLocationAction(
+    Location location,
+    LocationAction action,
+  ) async {
+    if (_isActionInProgress) {
+      return;
+    }
+    switch (action) {
+      case LocationAction.rename:
+        await _renameLocation(location);
+      case LocationAction.move:
+        await _moveLocation(location);
+      case LocationAction.delete:
+        await _deleteLocation(location);
+    }
+  }
+
+  Future<void> _renameLocation(Location location) async {
+    if (_isActionInProgress) {
+      return;
+    }
+    setState(() => _isActionInProgress = true);
+
+    try {
+      final parentPath = location.parentId == null
+          ? '我的收纳位置'
+          : await _pathForLocation(location.parentId!);
+      if (!mounted) {
+        return;
+      }
+
+      await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => LocationNameDialog(
+          title: '重命名位置',
+          initialName: location.name,
+          parentPath: parentPath,
           onSubmit: (name) async {
             await ref
                 .read(locationRepositoryProvider)
-                .create(name: name, parentId: parentId);
-            ref.invalidate(locationChildrenProvider(parentId));
+                .rename(location.id, name);
+            ref.invalidate(locationChildrenProvider(location.parentId));
+            if (location.id == _currentLocationId) {
+              final path = await _loadPathToLocation(location.id);
+              if (!mounted) {
+                return;
+              }
+              setState(() {
+                _breadcrumbs
+                  ..clear()
+                  ..addAll(path);
+              });
+            }
           },
-        );
-      },
-    );
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isActionInProgress = false);
+      }
+    }
   }
 
-  String _friendlyError(Object error) {
+  Future<void> _moveLocation(Location source) async {
+    if (_isActionInProgress) {
+      return;
+    }
+    setState(() => _isActionInProgress = true);
+
+    try {
+      final target = await showModalBottomSheet<LocationMoveTarget>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (context) => LocationTargetPicker(sourceId: source.id),
+      );
+      if (target == null || !mounted) {
+        return;
+      }
+
+      final repository = ref.read(locationRepositoryProvider);
+      final currentSource = await repository.getById(source.id);
+      final oldPath = await repository.fullPath(source.id);
+      final targetPath = target.parentId == null
+          ? '我的收纳位置'
+          : await repository.fullPath(target.parentId!);
+      final newPath = target.parentId == null
+          ? currentSource.name
+          : '$targetPath / ${currentSource.name}';
+      final impact = await _loadMoveImpact(currentSource.id);
+      if (!mounted) {
+        return;
+      }
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('确认移动位置'),
+          content: SingleChildScrollView(
+            child: ListBody(
+              children: [
+                const Text('源位置'),
+                Text(oldPath),
+                const SizedBox(height: 12),
+                const Text('移动后路径'),
+                Text(newPath),
+                const SizedBox(height: 12),
+                Text('包含子位置：${impact.descendantLocationCount} 个'),
+                Text('包含物品：${impact.itemCount} 条'),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('确认移动'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) {
+        return;
+      }
+
+      final moved = await repository.move(
+        id: currentSource.id,
+        targetParentId: target.parentId,
+      );
+      if (!mounted) {
+        return;
+      }
+      if (!moved) {
+        _showMessage('目标就是当前上级位置，未发生变化');
+        return;
+      }
+
+      ref.invalidate(locationChildrenProvider(currentSource.parentId));
+      ref.invalidate(locationChildrenProvider(target.parentId));
+      final movedPath = await _loadPathToLocation(currentSource.id);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _currentLocationId = currentSource.id;
+        _breadcrumbs
+          ..clear()
+          ..addAll(movedPath);
+      });
+      ref.invalidate(locationChildrenProvider(currentSource.id));
+      ref.invalidate(locationDirectItemsProvider(currentSource.id));
+      _showMessage('位置已移动');
+    } catch (error) {
+      if (mounted) {
+        _showMessage(_friendlyError(error, fallback: '移动位置失败，请重试'));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isActionInProgress = false);
+      }
+    }
+  }
+
+  Future<void> _deleteLocation(Location location) async {
+    if (_isActionInProgress) {
+      return;
+    }
+    setState(() => _isActionInProgress = true);
+
+    try {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('删除收纳位置'),
+          content: Text(
+            '确定删除“${location.name}”吗？\n\n'
+            '只有没有子位置、没有直接物品的空位置才能删除。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('确认删除'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) {
+        return;
+      }
+
+      await ref.read(locationRepositoryProvider).deleteEmpty(location.id);
+      ref.invalidate(locationChildrenProvider(location.parentId));
+      if (location.id == _currentLocationId) {
+        _goUp();
+      }
+      _showMessage('位置已删除');
+    } catch (error) {
+      if (mounted) {
+        _showMessage(_friendlyError(error, fallback: '删除位置失败，请重试'));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isActionInProgress = false);
+      }
+    }
+  }
+
+  Future<void> _refreshCurrentLevel() async {
+    final childrenProvider = locationChildrenProvider(_currentLocationId);
+    ref.invalidate(childrenProvider);
+    final futures = <Future<void>>[
+      ref.read(childrenProvider.future).then((_) {}),
+    ];
+
+    final currentLocationId = _currentLocationId;
+    if (currentLocationId != null) {
+      final itemsProvider = locationDirectItemsProvider(currentLocationId);
+      ref.invalidate(itemsProvider);
+      futures.add(ref.read(itemsProvider.future).then((_) {}));
+    }
+    await Future.wait(futures);
+  }
+
+  Future<List<Location>> _loadPathToLocation(int locationId) async {
+    final repository = ref.read(locationRepositoryProvider);
+    final path = <Location>[];
+    final visited = <int>{};
+    Location? current = await repository.getById(locationId);
+    while (current != null) {
+      if (!visited.add(current.id)) {
+        throw const LocationRepositoryException(
+          LocationRepositoryErrorCode.cycleMove,
+          '收纳位置存在循环引用',
+        );
+      }
+      path.insert(0, current);
+      current = current.parentId == null
+          ? null
+          : await repository.getById(current.parentId!);
+    }
+    return path;
+  }
+
+  Future<String> _pathForLocation(int locationId) {
+    return ref.read(locationRepositoryProvider).fullPath(locationId);
+  }
+
+  Future<_MoveImpact> _loadMoveImpact(int sourceId) async {
+    final locationRepository = ref.read(locationRepositoryProvider);
+    final itemRepository = ref.read(itemRepositoryProvider);
+    final impact = _MoveImpact();
+    final visited = <int>{};
+
+    Future<void> visit(int locationId) async {
+      if (!visited.add(locationId)) {
+        throw const LocationRepositoryException(
+          LocationRepositoryErrorCode.cycleMove,
+          '收纳位置存在循环引用',
+        );
+      }
+      final children = await locationRepository.listChildren(locationId);
+      impact.descendantLocationCount += children.length;
+      impact.itemCount += (await itemRepository.listByLocation(locationId))
+          .length;
+      for (final child in children) {
+        await visit(child.id);
+      }
+    }
+
+    await visit(sourceId);
+    return impact;
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String _friendlyError(Object error, {required String fallback}) {
     if (error is LocationRepositoryException) {
+      if (error.code == LocationRepositoryErrorCode.notEmpty) {
+        return '该位置仍包含子位置或物品，无法删除';
+      }
       return error.message;
     }
-    return '读取收纳位置失败，请重试';
+    return fallback;
   }
 }
 
-class _CreateLocationDialog extends StatefulWidget {
-  const _CreateLocationDialog({required this.title, required this.onSubmit});
-
-  final String title;
-  final Future<void> Function(String name) onSubmit;
-
-  @override
-  State<_CreateLocationDialog> createState() => _CreateLocationDialogState();
+class _MoveImpact {
+  int descendantLocationCount = 0;
+  int itemCount = 0;
 }
 
-class _CreateLocationDialogState extends State<_CreateLocationDialog> {
-  final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  String? _errorMessage;
-  bool _isSaving = false;
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    super.dispose();
-  }
+class _SectionLoading extends StatelessWidget {
+  const _SectionLoading();
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.title),
-      content: Form(
-        key: _formKey,
-        child: TextFormField(
-          controller: _nameController,
-          autofocus: true,
-          textInputAction: TextInputAction.done,
-          decoration: InputDecoration(
-            labelText: '位置名称',
-            errorText: _errorMessage,
-          ),
-          validator: (value) {
-            if (value == null || value.trim().isEmpty) {
-              return '位置名称不能为空';
-            }
-            return null;
-          },
-          onFieldSubmitted: _isSaving ? null : (_) => _submit(),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _isSaving ? null : () => Navigator.of(context).pop(),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          onPressed: _isSaving ? null : _submit,
-          child: _isSaving
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('保存'),
-        ),
-      ],
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 24),
+      child: Center(child: CircularProgressIndicator()),
     );
   }
+}
 
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+class _SectionEmpty extends StatelessWidget {
+  const _SectionEmpty({required this.text});
 
-    setState(() {
-      _errorMessage = null;
-      _isSaving = true;
-    });
+  final String text;
 
-    try {
-      await widget.onSubmit(_nameController.text.trim());
-      if (mounted) {
-        Navigator.of(context).pop(true);
-      }
-    } on LocationRepositoryException catch (error) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = error.message;
-          _isSaving = false;
-        });
-      }
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = '保存收纳位置失败，请重试';
-          _isSaving = false;
-        });
-      }
-    }
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24),
+      child: Center(child: Text(text)),
+    );
+  }
+}
+
+class _SectionError extends StatelessWidget {
+  const _SectionError({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Column(
+        children: [
+          const Icon(Icons.error_outline),
+          const SizedBox(height: 8),
+          Text(message, textAlign: TextAlign.center),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh),
+            label: const Text('重新加载'),
+          ),
+        ],
+      ),
+    );
   }
 }
