@@ -153,7 +153,7 @@ void main() {
     await pumpHomePage(tester);
 
     expect(find.text('雨天出门模板'), findsOneWidget);
-    expect(find.text('2 项物品'), findsOneWidget);
+    expect(find.text('2 项准备事项'), findsOneWidget);
     expect(find.textContaining('上次使用:'), findsOneWidget);
 
     // 点击模板卡片进入模板详情
@@ -164,14 +164,22 @@ void main() {
     expect(find.text('雨天出门模板'), findsWidgets);
   });
 
-  testWidgets('首页“查看全部”与“全部模板”跳转至出门导航页', (tester) async {
+  testWidgets('首页“查看全部”跳转至出门“进行中”页签', (tester) async {
     await pumpHomePage(tester);
 
     await tester.tap(find.text('查看全部'));
     await tester.pumpAndSettle();
 
-    expect(find.text('出门'), findsWidgets);
-    expect(find.text('进行中'), findsOneWidget);
-    expect(find.text('模板'), findsOneWidget);
+    expect(find.text('进行中的任务'), findsOneWidget);
+  });
+
+  testWidgets('首页“全部模板”跳转至出门“模板”页签', (tester) async {
+    await pumpHomePage(tester);
+
+    await tester.tap(find.text('全部模板'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('create-template-fab')), findsOneWidget);
+    expect(find.text('所有模板'), findsOneWidget);
   });
 }

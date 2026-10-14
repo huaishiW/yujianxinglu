@@ -122,6 +122,7 @@ class _ItemsPageState extends ConsumerState<ItemsPage> {
             if (locationList.isEmpty) {
               return _SectionEmpty(
                 text: _currentLocationId == null ? '还没有收纳位置' : '当前没有子位置',
+                icon: Icons.folder_open_outlined,
               );
             }
             return Column(
@@ -168,7 +169,10 @@ class _ItemsPageState extends ConsumerState<ItemsPage> {
           ),
           data: (itemList) {
             if (itemList.isEmpty) {
-              return const _SectionEmpty(text: '当前没有直接存放的物品');
+              return const _SectionEmpty(
+                text: '当前没有直接存放的物品',
+                icon: Icons.inventory_2_outlined,
+              );
             }
             return Column(
               children: [
@@ -563,15 +567,36 @@ class _SectionLoading extends StatelessWidget {
 }
 
 class _SectionEmpty extends StatelessWidget {
-  const _SectionEmpty({required this.text});
+  const _SectionEmpty({required this.text, this.icon = Icons.inbox_outlined});
 
   final String text;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 24),
-      child: Center(child: Text(text)),
+      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 36,
+              color: theme.colorScheme.outline.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              text,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

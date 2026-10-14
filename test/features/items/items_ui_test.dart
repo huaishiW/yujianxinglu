@@ -547,5 +547,31 @@ void main() {
       expect(completedDetail.entries.first.entry.nameSnapshot, '雨伞');
       expect(completedDetail.entries.first.entry.locationSnapshot, '卧室');
     });
+
+    testWidgets('收纳位置根目录隐藏返回上一级按钮，进入子位置后显示并可正常返回', (tester) async {
+      final rootId = await locationRepository.create(name: '阳台');
+      await locationRepository.create(name: '花架', parentId: rootId);
+
+      await pumpApp(tester);
+      await openItemsPage(tester);
+
+      // 根目录不显示返回上一级按钮
+      expect(find.byTooltip('返回上一级'), findsNothing);
+
+      // 进入阳台
+      await tester.tap(find.text('阳台'));
+      await tester.pumpAndSettle();
+
+      // 进入子位置后显示返回上一级按钮
+      expect(find.byTooltip('返回上一级'), findsOneWidget);
+      expect(find.text('花架'), findsOneWidget);
+
+      // 点击返回上一级回到根目录
+      await tester.tap(find.byTooltip('返回上一级'));
+      await tester.pumpAndSettle();
+
+      expect(find.byTooltip('返回上一级'), findsNothing);
+      expect(find.text('阳台'), findsOneWidget);
+    });
   });
 }

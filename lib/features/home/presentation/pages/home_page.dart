@@ -48,7 +48,7 @@ class HomePage extends ConsumerWidget {
             _SectionHeader(
               title: '进行中的出门任务',
               actionLabel: '查看全部',
-              onAction: () => context.go('/outings'),
+              onAction: () => context.go('/outings?tab=sessions'),
             ),
             const SizedBox(height: 8),
             activeSessions.when(
@@ -81,7 +81,7 @@ class HomePage extends ConsumerWidget {
             _SectionHeader(
               title: '最近使用的模板',
               actionLabel: '全部模板',
-              onAction: () => context.go('/outings'),
+              onAction: () => context.go('/outings?tab=templates'),
             ),
             const SizedBox(height: 8),
             recentTemplates.when(
@@ -385,7 +385,7 @@ class _RecentTemplateCard extends ConsumerWidget {
                           data: (detail) => Padding(
                             padding: const EdgeInsets.only(right: 8),
                             child: Text(
-                              '${detail.entries.length} 项物品',
+                              '${detail.entries.length} 项准备事项',
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: theme.colorScheme.onSurfaceVariant,
                               ),

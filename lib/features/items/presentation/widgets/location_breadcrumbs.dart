@@ -22,11 +22,12 @@ class LocationBreadcrumbs extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
       child: Row(
         children: [
-          IconButton(
-            onPressed: onUpTap,
-            tooltip: '返回上一级',
-            icon: const Icon(Icons.arrow_back),
-          ),
+          if (onUpTap != null)
+            IconButton(
+              onPressed: onUpTap,
+              tooltip: '返回上一级',
+              icon: const Icon(Icons.arrow_back),
+            ),
           Expanded(
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,

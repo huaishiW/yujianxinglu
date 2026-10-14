@@ -179,7 +179,7 @@ void main() {
 
       // 返回列表并刷新
       expect(find.text('日常通勤'), findsOneWidget);
-      expect(find.text('2 个条目'), findsOneWidget);
+      expect(find.text('2 项准备事项'), findsOneWidget);
 
       final all = await templateRepository.listAll();
       expect(all.length, 1);
@@ -315,7 +315,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('长途差旅'), findsOneWidget);
-      expect(find.text('1 个条目'), findsOneWidget);
+      expect(find.text('1 项准备事项'), findsOneWidget);
 
       final detail = await templateRepository.getDetail(templateId);
       expect(detail.template.name, '长途差旅');

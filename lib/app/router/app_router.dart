@@ -74,7 +74,11 @@ GoRouter createAppRouter({String initialLocation = '/home'}) {
             routes: [
               GoRoute(
                 path: '/outings',
-                builder: (context, state) => const OutingsPage(),
+                builder: (context, state) {
+                  final tab = state.uri.queryParameters['tab'];
+                  final initialTab = tab == 'templates' ? 1 : 0;
+                  return OutingsPage(initialTab: initialTab);
+                },
                 routes: [
                   GoRoute(
                     path: 'templates/new',

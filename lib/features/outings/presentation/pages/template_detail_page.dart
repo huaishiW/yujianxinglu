@@ -107,7 +107,7 @@ class TemplateDetailPage extends ConsumerWidget {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    '模板 ID: ${template.id} | 条目总数: ${entries.length} 项',
+                                    '共 ${entries.length} 项准备事项${template.lastUsedAt != null ? ' · 最近使用: ${_formatTime(template.lastUsedAt!)}' : ''}',
                                     style: theme.textTheme.bodySmall?.copyWith(
                                       color: theme.colorScheme.outline,
                                     ),
@@ -346,4 +346,13 @@ class TemplateDetailPage extends ConsumerWidget {
       ),
     );
   }
+}
+
+String _formatTime(int ms) {
+  final dt = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
+  final m = dt.month.toString().padLeft(2, '0');
+  final d = dt.day.toString().padLeft(2, '0');
+  final h = dt.hour.toString().padLeft(2, '0');
+  final min = dt.minute.toString().padLeft(2, '0');
+  return '$m-$d $h:$min';
 }
