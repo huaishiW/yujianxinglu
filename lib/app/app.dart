@@ -12,7 +12,7 @@ class PersonalItemsApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: '个人物品与出门助手',
+      title: '玉简行录',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       routerConfig: router ?? appRouter,

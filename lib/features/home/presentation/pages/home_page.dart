@@ -16,7 +16,7 @@ class HomePage extends ConsumerWidget {
     final recentTemplates = ref.watch(recentTemplatesProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('个人物品与出门助手'), centerTitle: true),
+      appBar: AppBar(title: const Text('玉简行录'), centerTitle: true),
       body: RefreshIndicator(
         onRefresh: () async {
           ref.read(sessionRefreshProvider.notifier).refresh();

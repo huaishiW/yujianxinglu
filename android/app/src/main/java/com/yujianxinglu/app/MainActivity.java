@@ -1,4 +1,4 @@
-package com.example.personal_items_assistant;
+package com.yujianxinglu.app;
 
 import io.flutter.embedding.android.FlutterActivity;
 

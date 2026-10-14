@@ -72,7 +72,7 @@ void main() {
   testWidgets('三栏一级导航可以切换', (tester) async {
     await pumpApp(tester);
 
-    expect(find.text('个人物品与出门助手'), findsOneWidget);
+    expect(find.text('玉简行录'), findsOneWidget);
     expect(find.byIcon(Icons.home), findsOneWidget);
 
     await openItemsPage(tester);
